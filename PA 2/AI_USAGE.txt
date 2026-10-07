@@ -1,0 +1,14 @@
+AI usage for Programming Assignment 2
+
+AI tool used: Claude Code (Anthropic's Claude model).
+
+How it was used: I asked Claude Code to read the assignment PDF, the
+template, the test script and the data file, and to complete the
+assignment. It wrote the ten required functions (holds, count_stocks,
+held_stocks, all_masks, get_portfolios, next_portfolio, gosper_portfolios,
+variance_all_pairs, portfolio_variance, lowest_risk) and the argument
+checking in main, following the approach described in the assignment for
+each function, and recreated the course makefile that was missing from my
+folder. It also drafted the answers to the written questions in
+answers.txt, which I reviewed. The code was built with make and verified
+with the provided test_portfolio.sh script.

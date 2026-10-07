@@ -1,0 +1,152 @@
+CS 385 Programming Assignment 2 - Written Questions
+Abhinav Keswani
+
+1. Counting
+
+   Recurrence. Every k-stock portfolio from stocks 0..n-1 either leaves out
+   stock n-1 or holds it, so
+
+       P(n, k) = P(n - 1, k) + P(n - 1, k - 1)
+
+   with base cases P(n, 0) = 1 for every n >= 0 (only the empty portfolio) and
+   P(n, k) = 0 whenever n < k (not enough stocks). This is Pascal's rule, so
+   P(n, k) = C(n, k) = n! / (k! (n - k)!).
+
+   Method 1 always examines 2^20 = 1,048,576 integers for n = 20, no matter
+   what k is. Integers examined per portfolio kept:
+
+       k = 1:  1,048,576 / C(20, 1)  = 1,048,576 / 20      = 52,428.8
+       k = 5:  1,048,576 / C(20, 5)  = 1,048,576 / 15,504  =     67.6
+       k = 10: 1,048,576 / C(20, 10) = 1,048,576 / 184,756 =      5.7
+
+   Method 1 is closest to the other two methods when k = 10. Methods 2 and 3
+   do work proportional to the number of portfolios they return, C(20, k),
+   while Method 1 does work proportional to 2^20 regardless of k. C(n, k) is
+   largest in the middle, at k = n/2 = 10, so that is where the fraction of
+   wasted integers (those with the wrong number of bits) is smallest: about
+   17.6% of all 20-bit integers have exactly ten 1 bits, versus 1.5% with five
+   and 0.002% with one.
+
+2. Gosper's hack
+
+   Trace of next_portfolio on x = 01110:
+
+       x                  = 01110
+       c = x & (~x + 1)   = 00010      (lowest 1 bit of x)
+       r = x + c          = 01110 + 00010 = 10000
+       r ^ x              = 11110
+       (r ^ x) >> 2       = 00111
+       ((r ^ x) >> 2) / c = 00111 / 00010 = 00011
+       next = 00011 | r   = 00011 | 10000 = 10011
+
+   So next_portfolio(01110) = 10011, which is the next integer after 14 with
+   three 1 bits (19 = 16 + 2 + 1). Check: 01111 (4 bits), 10000 (1 bit),
+   10001 (2 bits), 10010 (2 bits), 10011 (3 bits).
+
+   Line 1, c = x & (~x + 1). ~x + 1 is the two's-complement negation -x. All
+   bits below the lowest 1 of x are 0 in x and become 1 in ~x; adding 1
+   carries through them and stops exactly at the position of the lowest 1 of
+   x, so ~x + 1 agrees with x in that bit and disagrees everywhere above it.
+   The AND therefore leaves only the lowest 1 bit of x.
+
+   Line 2, r = x + c. Adding the lowest 1 bit to x makes a carry ripple up
+   through the lowest run of consecutive 1s in x and land in the first 0
+   above that run. In the example 01110 + 00010 = 10000: the run 111 is
+   cleared and the 0 above it becomes 1. r is larger than x but it has lost
+   bits: the run of length L was replaced by a single 1.
+
+   Line 3, next = (((r ^ x) >> 2) / c) | r. r ^ x is the set of bits that
+   changed: the whole run of L ones plus the new bit above it, a block of
+   L + 1 consecutive 1s whose lowest bit is at the position of c. We need to
+   put back L - 1 ones at the very bottom of the number (the smallest
+   arrangement, so the result is the *next* integer). Shifting right by 2
+   leaves L - 1 ones, and dividing by c slides that block down so it starts
+   at bit 0. OR-ing with r adds those low ones back to r without disturbing
+   the carried bit.
+
+   Why dividing by c is a shift: c has a single 1 bit at position t, so
+   c = 2^t. Dividing an unsigned integer by 2^t is the same as shifting it
+   right by t places (x / 2^t == x >> t), and here the block being divided is
+   a multiple of c, so there is no remainder. The division is used instead of
+   a shift because the shift amount t is not known as a number, only as the
+   mask c; dividing by c lets the hardware do the "shift by the position of
+   c" without ever computing t with a loop or __builtin_ctz.
+
+3. Work per portfolio
+
+   (a) get_portfolios(n, k) builds its result by copying every portfolio
+       returned by its two recursive calls into a new vector. A portfolio is
+       created at a base case and then copied once at every level on the way
+       back up to the top-level call. Since n drops by 1 on every call, the
+       recursion is at most n levels deep, so a single portfolio is copied at
+       most n times (20 times for n = 20) before the top-level call returns
+       it. Each level is also allocating and growing vectors.
+
+       Gosper's hack should be fastest for large inputs: it does a fixed
+       handful of integer operations per portfolio, writes each portfolio
+       into the output vector exactly once, uses no recursion and no
+       temporary vectors. Method 1 is worst because it touches all 2^n
+       integers and calls count_stocks on each one; Method 2 is in between,
+       with O(n) copies per portfolio plus function-call overhead.
+
+   (b) variance_all_pairs looks at every pair of the n stocks, so it examines
+       n^2 = 20^2 = 400 pairs for both k = 2 and k = 10. portfolio_variance
+       looks only at pairs of held stocks:
+
+           k = 2:  k^2 = 4 pairs    (versus 400)
+           k = 10: k^2 = 100 pairs  (versus 400)
+
+4. Scaling
+
+   Method 1 would examine every integer from 0 to 2^40 - 1, which is
+   2^40 = 1,099,511,627,776 integers, about 1,297 of them for each portfolio
+   kept. At roughly a billion checks per second that is tens of minutes just
+   to count bits, before any variances are computed.
+
+   What would fail for n = 40: a portfolio is stored in a 32-bit unsigned
+   int, which only has room for 32 stocks, so bits 32..39 do not exist. The
+   expression 1u << n is undefined for n >= 32 (main already refuses n > 31
+   for this reason), the loop bound in all_masks would overflow, and
+   held_stocks/holds could never report a stock above index 31. Even with a
+   64-bit type, storing all 847,660,528 portfolios in a vector would take
+   847,660,528 * 4 bytes = 3.4 GB (6.8 GB with 64-bit values), and
+   get_portfolios would copy that data up to 40 times; all_masks would take
+   over a trillion iterations.
+
+   Gosper's hack is the method that can evaluate every portfolio without
+   storing them: it is an iterator. Starting from (1 << k) - 1, keep only the
+   current portfolio x and the best portfolio/variance seen so far; compute
+   portfolio_variance(x), update the best if it is lower, and replace x with
+   next_portfolio(x) until x reaches 1 << n. Memory is constant (a few
+   integers) and each portfolio is produced in constant time. It just needs
+   the integer type widened to unsigned long long (64 bits). Method 1 could
+   also be run on the fly, but it would still examine all 2^40 integers; the
+   recursive method naturally builds whole vectors, so it would have to be
+   rewritten to pass a callback or an accumulator instead of returning lists.
+
+5. Correlation
+
+   For k = 5:
+
+       5 least volatile stocks:  14.0%  DUK SO PG KO JNJ
+       Lowest-risk portfolio:    11.2%  DUK PG JNJ MSFT XOM
+
+   The lowest-risk portfolio holds MSFT and XOM, which the five least
+   volatile stocks do not. MSFT is ranked 13th (28.9%) and XOM is ranked
+   10th (24.9%) in the volatility list; they replace SO (2nd, 17.6%) and KO
+   (3rd, 18.0%).
+
+   Portfolio variance is (1/k^2) * sum over all pairs (i, j) of cov[i][j],
+   so it depends on the k diagonal terms (each stock's own variance) and on
+   the k^2 - k covariance terms between different stocks. The five least
+   volatile stocks are two utilities, two staples and a healthcare name: all
+   defensive stocks that tend to rise and fall together, so their pairwise
+   covariances are large and positive and add a lot to the sum. MSFT
+   (technology) and XOM (energy) each have a larger variance on their own,
+   but their returns move largely independently of, or opposite to, the
+   defensive stocks, so their covariances with DUK, PG and JNJ are small or
+   negative. Swapping SO and KO for MSFT and XOM raises two diagonal terms
+   but lowers many more off-diagonal terms, and the net sum is smaller:
+   volatility falls from 14.0% to 11.2%. That is diversification: a volatile
+   stock that is uncorrelated with the rest of the portfolio cancels out
+   some of the other stocks' moves instead of amplifying them.
