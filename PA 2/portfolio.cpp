@@ -27,20 +27,13 @@ using namespace std;
 
 /* ----- Bit basics ----- */
 
-// TODO: Returns true if stock i is in the portfolio, that is, if bit i is 1.
-// Hint: the mask 1u << i has a single 1 bit, in position i.
+// True if bit i of the portfolio is set.
 bool holds(unsigned int portfolio, int i) {
-    // Build a mask with a single 1 bit in position i and AND it with the
-    // portfolio. The result is nonzero exactly when bit i is set.
     return (portfolio & (1u << i)) != 0;
 }
 
-// TODO: Returns the number of stocks in the portfolio (the number of 1 bits).
-// Hint: p = p & (p - 1) clears the lowest 1 bit of p. Count how many times you
-// can do that before p becomes 0. Compiler bit-counting builtins are not allowed.
+// Number of 1 bits: clear the lowest 1 bit until nothing is left.
 int count_stocks(unsigned int portfolio) {
-    // Each iteration clears the lowest 1 bit, so the loop runs once per held
-    // stock instead of once per bit position.
     int count = 0;
     while (portfolio != 0) {
         portfolio = portfolio & (portfolio - 1);
@@ -49,15 +42,10 @@ int count_stocks(unsigned int portfolio) {
     return count;
 }
 
-// TODO: Returns the indices of the held stocks, in increasing order.
-// Hint: check the lowest bit, then shift the portfolio right by one, until the
-// portfolio is 0. That way the loop stops after the highest held stock instead
-// of always running 32 times.
+// Indices of the held stocks, lowest first.
 vector<int> held_stocks(unsigned int portfolio) {
     vector<int> stocks;
     int i = 0;
-    // Look at the lowest bit, then shift everything down by one. The loop
-    // ends as soon as no 1 bits remain, i.e. right after the highest held stock.
     while (portfolio != 0) {
         if ((portfolio & 1u) != 0) {
             stocks.push_back(i);
@@ -70,14 +58,9 @@ vector<int> held_stocks(unsigned int portfolio) {
 
 /* ----- Enumeration ----- */
 
-// TODO: Method 1. Returns every portfolio of exactly k stocks chosen from
-// stocks 0 through n - 1, in increasing numeric order, by trying every integer
-// from 0 to 2^n - 1 and keeping the ones with exactly k stocks.
-// This is the only function allowed to loop over every integer.
+// Method 1: try every integer below 2^n and keep those with k bits.
 vector<unsigned int> all_masks(int n, int k) {
     vector<unsigned int> portfolios;
-    // Every portfolio of n stocks is an integer in [0, 2^n), so counting up
-    // visits them all in increasing order. Keep the ones with exactly k bits.
     const unsigned int limit = 1u << n;
     for (unsigned int mask = 0; mask < limit; ++mask) {
         if (count_stocks(mask) == k) {
@@ -87,28 +70,15 @@ vector<unsigned int> all_masks(int n, int k) {
     return portfolios;
 }
 
-// TODO: Method 2. Returns the same list, but built recursively, as in the
-// stair climber problem. Every portfolio either
-//   - leaves out stock n - 1: it is one of the portfolios of get_portfolios(n - 1, k), or
-//   - holds stock n - 1: it is a portfolio of get_portfolios(n - 1, k - 1) with bit n - 1 set.
-// Putting the portfolios that leave out stock n - 1 first gives increasing order.
-// Base cases: k == 0 means one portfolio, the empty portfolio 0; n < k means none.
-// This function must be recursive.
+// Method 2: recursive, portfolios without stock n-1 first, then with it.
 vector<unsigned int> get_portfolios(int n, int k) {
-    // Base cases: choosing 0 stocks gives only the empty portfolio, and
-    // choosing more stocks than are available gives nothing.
     if (k == 0) {
         return vector<unsigned int>{0};
     }
     if (n < k) {
         return vector<unsigned int>{};
     }
-    // Portfolios without stock n - 1 come from the first n - 1 stocks alone.
-    // They are all smaller than any portfolio with bit n - 1 set, so putting
-    // them first keeps the list in increasing order.
     vector<unsigned int> result = get_portfolios(n - 1, k);
-    // Portfolios with stock n - 1: choose k - 1 from the first n - 1 stocks,
-    // then turn on bit n - 1.
     vector<unsigned int> with_last = get_portfolios(n - 1, k - 1);
     const unsigned int last = 1u << (n - 1);
     for (unsigned int p : with_last) {
@@ -117,35 +87,24 @@ vector<unsigned int> get_portfolios(int n, int k) {
     return result;
 }
 
-// TODO: One step of Gosper's hack: returns the next larger integer with the
-// same number of 1 bits as x. See Section 4 of the assignment.
+// One step of Gosper's hack.
 unsigned int next_portfolio(unsigned int x) {
-    unsigned int c = x & (~x + 1);           // lowest 1 bit of x
-    unsigned int r = x + c;                  // carry through the lowest run of 1s
-    // (r ^ x) marks the bits that changed: the lowest run of 1s plus the 0
-    // just above it. Shifting right by 2 and dividing by c (a power of two,
-    // so the division is another right shift) moves that run down to the
-    // bottom with one fewer 1 bit, which is exactly what the carry removed.
+    unsigned int c = x & (~x + 1);
+    unsigned int r = x + c;
     return (((r ^ x) >> 2) / c) | r;
 }
 
-// TODO: Method 3. Returns the same list again, starting at the smallest
-// k-stock portfolio, (1u << k) - 1, and calling next_portfolio until the
-// result is at least 1u << n.
+// Method 3: start at the k lowest bits and step with next_portfolio.
 vector<unsigned int> gosper_portfolios(int n, int k) {
     vector<unsigned int> portfolios;
     if (k > n) {
         return portfolios;
     }
     if (k == 0) {
-        // Gosper's hack needs at least one 1 bit, so handle the empty
-        // portfolio directly.
         portfolios.push_back(0);
         return portfolios;
     }
     const unsigned int limit = 1u << n;
-    // Start with the k lowest bits set and step to the next larger integer
-    // with k bits until we run past the largest n-bit value.
     for (unsigned int x = (1u << k) - 1; x < limit; x = next_portfolio(x)) {
         portfolios.push_back(x);
     }
@@ -154,9 +113,7 @@ vector<unsigned int> gosper_portfolios(int n, int k) {
 
 /* ----- Risk ----- */
 
-// TODO: Returns the variance of the equally weighted portfolio by looking at
-// every pair (i, j) of the n stocks and adding cov[i][j] when both stocks are
-// held. Divide the sum by k * k, where k is the number of stocks held.
+// Sum cov[i][j] over all n^2 pairs where both stocks are held, divided by k^2.
 double variance_all_pairs(unsigned int portfolio, const vector<vector<double>> &cov) {
     const int n = cov.size();
     const int k = count_stocks(portfolio);
@@ -164,7 +121,6 @@ double variance_all_pairs(unsigned int portfolio, const vector<vector<double>> &
         return 0.0;
     }
     double sum = 0.0;
-    // Visit all n^2 pairs and only count the ones where both stocks are held.
     for (int i = 0; i < n; ++i) {
         if (!holds(portfolio, i)) {
             continue;
@@ -178,8 +134,7 @@ double variance_all_pairs(unsigned int portfolio, const vector<vector<double>> &
     return sum / (static_cast<double>(k) * k);
 }
 
-// TODO: Returns the same value, but call held_stocks first and loop only over
-// the pairs of stocks that are actually held.
+// Same value, but only over the k^2 pairs of held stocks.
 double portfolio_variance(unsigned int portfolio, const vector<vector<double>> &cov) {
     vector<int> stocks = held_stocks(portfolio);
     const int k = stocks.size();
@@ -187,7 +142,6 @@ double portfolio_variance(unsigned int portfolio, const vector<vector<double>> &
         return 0.0;
     }
     double sum = 0.0;
-    // Only k^2 pairs to look at, since every pair of held stocks is relevant.
     for (int i : stocks) {
         for (int j : stocks) {
             sum += cov[i][j];
@@ -196,8 +150,7 @@ double portfolio_variance(unsigned int portfolio, const vector<vector<double>> &
     return sum / (static_cast<double>(k) * k);
 }
 
-// TODO: Returns the portfolio with the smallest portfolio_variance. If two
-// portfolios have the same variance, return the one that comes first.
+// Portfolio with the smallest variance; first one wins ties.
 unsigned int lowest_risk(const vector<unsigned int> &portfolios,
                          const vector<vector<double>> &cov) {
     unsigned int best = 0;
@@ -205,7 +158,6 @@ unsigned int lowest_risk(const vector<unsigned int> &portfolios,
     bool found = false;
     for (unsigned int p : portfolios) {
         double v = portfolio_variance(p, cov);
-        // Strict less-than keeps the earliest portfolio when variances tie.
         if (!found || v < best_variance) {
             best = p;
             best_variance = v;
@@ -357,7 +309,7 @@ int main(int argc, char *argv[]) {
     }
     const int n = stocks.size();
 
-    // The count must be a whole number (no leftover characters) in [1, n].
+    // k must be a whole number from 1 to n.
     int k;
     istringstream iss(argv[2]);
     if (!(iss >> k) || !iss.eof() || k < 1 || k > n) {
